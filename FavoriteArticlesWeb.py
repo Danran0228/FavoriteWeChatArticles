@@ -12,6 +12,11 @@ import html2text
 from bs4 import BeautifulSoup
 from datetime import datetime
 import configparser
+from logger_config import setup_logger
+import logging
+
+# 设置日志
+logger = setup_logger()
 
 app = Flask(__name__)
 
@@ -190,13 +195,15 @@ class WechatArticleCrawler:
 @app.route('/save', methods=['GET'])
 def save_article():
     try:
+        logger.info("开始处理文章保存请求")
         url = request.args.get('url')
         if not url:
+            logger.warning("未提供文章URL")
             return jsonify({'error': '请提供文章URL'}), 400
             
-        # 从 URL 参数中获取保存路径
         save_path = request.args.get('path')
         if save_path:
+            logger.info(f"使用自定义保存路径: {save_path}")
             # 确保路径是绝对路径
             save_path = os.path.abspath(save_path)
             
@@ -204,17 +211,22 @@ def save_article():
             if not os.access(os.path.dirname(save_path), os.W_OK):
                 return jsonify({'error': '指定的保存路径无法访问或没有写入权限'}), 400
             
+        logger.info(f"开始抓取文章: {url}")
         crawler = WechatArticleCrawler()
         article = crawler.get_article_content_selenium(url)
         
         if not article:
+            logger.error("文章抓取失败")
             return jsonify({'error': '文章抓取失败'}), 500
             
+        logger.info("开始保存文章")
         filepath = crawler.save_article(article, save_path)
         
         if not filepath:
+            logger.error("文章保存失败")
             return jsonify({'error': '文章保存失败'}), 500
             
+        logger.info(f"文章保存成功: {filepath}")
         return jsonify({
             'message': '文章保存成功',
             'filepath': filepath,
@@ -222,7 +234,8 @@ def save_article():
         })
         
     except Exception as e:
+        logger.exception(f"处理请求时发生错误: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', port=5000)
