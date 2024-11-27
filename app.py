@@ -1,4 +1,4 @@
-from FavoriteArticlesWeb import app
+from FavoriteArticlesWeb import app, WebDriverSingleton
 from waitress import serve
 import logging
 
@@ -10,3 +10,5 @@ if __name__ == "__main__":
         serve(app, host='0.0.0.0', port=5000)
     except Exception as e:
         logger.error(f"服务器启动失败: {str(e)}") 
+    finally:
+        WebDriverSingleton.quit_driver()

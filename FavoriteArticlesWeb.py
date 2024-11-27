@@ -1,10 +1,11 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 import os
 import re
 import requests
@@ -13,12 +14,17 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import configparser
 from logger_config import setup_logger
-import logging
+from multiprocessing import Pool
+from functools import partial
 
 # 设置日志
 logger = setup_logger()
 
 app = Flask(__name__)
+
+# 设置 webdriver_manager 的缓存路径
+os.environ['WDM_LOCAL'] = '1'  # 启用本地缓存
+os.environ['WDM_PATH'] = os.path.join(os.getcwd(), "drivers")  # 设置缓存路径
 
 class Config:
     def __init__(self):
@@ -38,37 +44,41 @@ class Config:
     def get_save_path(self):
         return self.config.get('Path', 'save_path', fallback='articles')
 
-class WechatArticleCrawler:
-    def __init__(self):
-        self.config = Config()
+class WebDriverSingleton:
+    _instance = None
+    _driver = None
 
-    def get_save_path(self, custom_path=None):
-        """
-        按优先级获取保存路径：
-        1. 自定义路径（通过参数传入）
-        2. 配置文件中的路径
-        3. 默认路径（articles）
-        """
-        if custom_path:
-            return os.path.abspath(custom_path)
-        
-        config_path = self.config.get_save_path()
-        if config_path and config_path != 'articles':
-            return os.path.abspath(config_path)
-            
-        return 'articles'
-
-    def get_article_content_selenium(self, url):
-        try:
+    @classmethod
+    def get_driver(cls):
+        if cls._driver is None:
             chrome_options = Options()
             chrome_options.add_argument('--headless')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.set_page_load_timeout(20)
+            # 简化 ChromeDriver 初始化
+            chrome_driver_path = ChromeDriverManager().install()
             
+            cls._driver = webdriver.Chrome(
+                service=Service(chrome_driver_path),
+                options=chrome_options
+            )
+        return cls._driver
+
+    @classmethod
+    def quit_driver(cls):
+        if cls._driver is not None:
+            cls._driver.quit()
+            cls._driver = None
+
+class WechatArticleCrawler:
+    def __init__(self):
+        self.config = Config()
+
+    def process_url(self, url):
+        try:
+            driver = WebDriverSingleton.get_driver()
             driver.get(url)
             
             # 等待文章标题加载
@@ -95,8 +105,6 @@ class WechatArticleCrawler:
             images = content_element.find_elements(By.TAG_NAME, "img")
             image_urls = [img.get_attribute('data-src') for img in images if img.get_attribute('data-src')]
             
-            driver.quit()
-            
             return {
                 'title': title,
                 'author': author,
@@ -105,15 +113,23 @@ class WechatArticleCrawler:
                 'url': url
             }
         except Exception as e:
+            raise e
+
+    def get_article_content_selenium(self, url):
+        try:
+            return self.process_url(url)
+        except Exception as e:
             print(f"抓取文章失败: {str(e)}")
-            if 'driver' in locals():
-                driver.quit()
             return None
 
     def save_article(self, article, custom_path=None):
         try:
             # 获取基础保存路径
-            base_dir = self.get_save_path(custom_path)
+            base_dir = self.config.get_save_path()
+            
+            if custom_path:
+                # 如果提供了自定义路径,使用自定义路径
+                base_dir = custom_path
             
             # 规范化路径
             base_dir = os.path.normpath(base_dir)
@@ -133,7 +149,7 @@ class WechatArticleCrawler:
             author_dir = os.path.join(base_dir, author_name)
             if not os.path.exists(author_dir):
                 os.makedirs(author_dir)
-            
+            logger.info(f"创建路径: {author_dir}")
             # 创建 images 目录
             images_dir = os.path.join(author_dir, 'images')
             if not os.path.exists(images_dir):
@@ -141,6 +157,7 @@ class WechatArticleCrawler:
             
             # 下载图片时使用正确的路径
             image_map = {}
+            logger.info(f"开始下载图片")
             for i, img_url in enumerate(article['image_urls']):
                 try:
                     response = requests.get(img_url, stream=True)
@@ -182,7 +199,7 @@ class WechatArticleCrawler:
 {content_markdown}"""
             
             # 创建文件路径
-            filepath = os.path.join(author_dir, f"{date_prefix}{article_title}.md")
+            filepath = os.path.join(author_dir, f"{date_prefix}-{article_title}.md")
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
                 
@@ -192,10 +209,15 @@ class WechatArticleCrawler:
             print(f"保存文章失败: {str(e)}")
             return None
 
+@app.after_request
+def set_response_headers(response):
+    response.headers['Content-Type'] = 'application/json; charset=utf-8'
+    return response
+
 @app.route('/save', methods=['GET'])
 def save_article():
     try:
-        logger.info("开始处理文章保存请求")
+        logger.info("开始处理文章请求")
         url = request.args.get('url')
         if not url:
             logger.warning("未提供文章URL")
@@ -231,11 +253,14 @@ def save_article():
             'message': '文章保存成功',
             'filepath': filepath,
             'title': article['title']
-        })
+        }), 200
         
     except Exception as e:
         logger.exception(f"处理请求时发生错误: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # if __name__ == '__main__':
-#     app.run(host='0.0.0.0', port=5000)
+#     try:
+#         app.run(host='0.0.0.0', port=5000)
+#     finally:
+#         WebDriverSingleton.quit_driver()
