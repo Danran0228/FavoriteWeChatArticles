@@ -95,7 +95,7 @@ class WechatArticleCrawler:
 
             # 等待文章发布时间加载
             publish_time_element = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "rich_media_meta_text"))
+                EC.presence_of_element_located((By.ID, "publish_time"))
             )
             publish_time = publish_time_element.text.strip()
             print("提取出来的发布时间", publish_time)
@@ -281,8 +281,8 @@ def save_article():
         logger.exception(f"处理请求时发生错误: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# if __name__ == '__main__':
-#     try:
-#         app.run(host='0.0.0.0', port=5001)
-#     finally:
-#         WebDriverSingleton.quit_driver()
+if __name__ == '__main__':
+    try:
+        app.run(host='0.0.0.0', port=5001)
+    finally:
+        WebDriverSingleton.quit_driver()
