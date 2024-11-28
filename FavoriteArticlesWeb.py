@@ -92,6 +92,24 @@ class WechatArticleCrawler:
                 EC.presence_of_element_located((By.CLASS_NAME, "rich_media_meta_nickname"))
             )
             author = author_element.text.strip()
+
+            # 等待文章发布时间加载
+            publish_time_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "rich_media_meta_text"))
+            )
+            publish_time = publish_time_element.text.strip()
+            print("提取出来的发布时间", publish_time)
+            
+            # 提取发布日期
+            publish_date = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', publish_time)
+            print("格式化后的发布日期", publish_date)
+            if publish_date:
+                year = publish_date.group(1)
+                month = publish_date.group(2).zfill(2)
+                day = publish_date.group(3).zfill(2)
+                publish_date = f"{year}{month}{day}"
+            else:
+                publish_date = None
             
             # 等待文章内容加载
             content_element = WebDriverWait(driver, 10).until(
@@ -108,6 +126,7 @@ class WechatArticleCrawler:
             return {
                 'title': title,
                 'author': author,
+                'publish_date': publish_date,
                 'content_html': content_html,
                 'image_urls': image_urls,
                 'url': url
@@ -142,8 +161,11 @@ class WechatArticleCrawler:
             author_name = re.sub(r'[\\/*?:"<>|]', "", article['author'])
             article_title = re.sub(r'[\\/*?:"<>|]', "", article['title'])
             
-            # 获取当前日期作为文件名前缀
-            date_prefix = datetime.now().strftime('%Y%m%d')
+            if article['publish_date']:
+                date_prefix = article['publish_date']
+            else:
+                # 如果没有发布日期,则使用当前日期
+                date_prefix = datetime.now().strftime('%Y%m%d')
             
             # 使用 os.path.join 来创建路径
             author_dir = os.path.join(base_dir, author_name)
@@ -261,6 +283,6 @@ def save_article():
 
 # if __name__ == '__main__':
 #     try:
-#         app.run(host='0.0.0.0', port=5000)
+#         app.run(host='0.0.0.0', port=5001)
 #     finally:
 #         WebDriverSingleton.quit_driver()
