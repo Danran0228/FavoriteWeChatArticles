@@ -98,11 +98,9 @@ class WechatArticleCrawler:
                 EC.presence_of_element_located((By.ID, "publish_time"))
             )
             publish_time = publish_time_element.text.strip()
-            print("提取出来的发布时间", publish_time)
             
             # 提取发布日期
             publish_date = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', publish_time)
-            print("格式化后的发布日期", publish_date)
             if publish_date:
                 year = publish_date.group(1)
                 month = publish_date.group(2).zfill(2)
@@ -184,7 +182,9 @@ class WechatArticleCrawler:
                 try:
                     response = requests.get(img_url, stream=True)
                     if response.status_code == 200:
-                        img_filename = f"image_{i+1}.jpg"
+                        # 使用时间戳命名图片
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
+                        img_filename = f"image_{timestamp}.jpg"
                         img_path = os.path.join(images_dir, img_filename)
                         with open(img_path, 'wb') as f:
                             f.write(response.content)
