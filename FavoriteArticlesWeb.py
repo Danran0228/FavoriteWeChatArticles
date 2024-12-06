@@ -57,13 +57,20 @@ class WebDriverSingleton:
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             
-            # 简化 ChromeDriver 初始化
-            chrome_driver_path = ChromeDriverManager().install()
-            
-            cls._driver = webdriver.Chrome(
-                service=Service(chrome_driver_path),
-                options=chrome_options
-            )
+            try:
+                # 首先尝试直接使用系统安装的 Chrome
+                cls._driver = webdriver.Chrome(
+                    options=chrome_options
+                )
+            except Exception as e:
+                logger.info("未找到系统Chrome驱动，正在下载...")
+                # 如果失败，则使用 webdriver_manager 下载
+                chrome_driver_path = ChromeDriverManager().install()
+                cls._driver = webdriver.Chrome(
+                    service=Service(chrome_driver_path),
+                    options=chrome_options
+                )
+                
         return cls._driver
 
     @classmethod
