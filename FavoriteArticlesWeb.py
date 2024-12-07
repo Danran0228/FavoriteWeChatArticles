@@ -168,17 +168,26 @@ class WechatArticleCrawler:
             
             if article['publish_date']:
                 date_prefix = article['publish_date']
+                # 从发布日期中提取年月日
+                year = date_prefix[:4]
+                month = date_prefix[4:6]
+                day = date_prefix[6:8]
             else:
                 # 如果没有发布日期,则使用当前日期
-                date_prefix = datetime.now().strftime('%Y%m%d')
+                now = datetime.now()
+                date_prefix = now.strftime('%Y%m%d')
+                year = now.strftime('%Y')
+                month = now.strftime('%m')
+                day = now.strftime('%d')
             
-            # 使用 os.path.join 来创建路径
-            author_dir = os.path.join(base_dir, author_name)
-            if not os.path.exists(author_dir):
-                os.makedirs(author_dir)
-            logger.info(f"创建路径: {author_dir}")
-            # 创建 images 目录
-            images_dir = os.path.join(author_dir, 'images')
+            # 创建层级目录结构：作者/年/月/日
+            article_dir = os.path.join(base_dir, author_name, year, month, day)
+            if not os.path.exists(article_dir):
+                os.makedirs(article_dir)
+            logger.info(f"创建路径: {article_dir}")
+            
+            # 创建 images 目录在日期目录下
+            images_dir = os.path.join(article_dir, 'images')
             if not os.path.exists(images_dir):
                 os.makedirs(images_dir)
             
@@ -227,8 +236,8 @@ class WechatArticleCrawler:
 
 {content_markdown}"""
             
-            # 创建文件路径
-            filepath = os.path.join(author_dir, f"{date_prefix}-{article_title}.md")
+            # 更新文件保存路径
+            filepath = os.path.join(article_dir, f"{article_title}.md")
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
                 
