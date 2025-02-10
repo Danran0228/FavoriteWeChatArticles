@@ -148,95 +148,108 @@ class WechatArticleCrawler:
 
     def save_article(self, article, custom_path=None):
         try:
-            # 获取基础保存路径
+            # 步骤1: 确定基础保存路径
+            # 从配置文件获取默认保存路径
             base_dir = self.config.get_save_path()
             
+            # 如果提供了自定义路径，则覆盖默认路径
             if custom_path:
-                # 如果提供了自定义路径,使用自定义路径
                 base_dir = custom_path
             
-            # 规范化路径
+            # 标准化路径格式，处理路径分隔符
             base_dir = os.path.normpath(base_dir)
             
-            # 确保目录存在
+            # 确保基础目录存在，如不存在则创建
             if not os.path.exists(base_dir):
                 os.makedirs(base_dir)
             
-            # 清理作者名称和文章标题中的非法字符
+            # 步骤2: 清理文件名中的非法字符
+            # 移除作者名称和文章标题中的特殊字符，确保文件名合法
             author_name = re.sub(r'[\\/*?:"<>|]', "", article['author'])
             article_title = re.sub(r'[\\/*?:"<>|]', "", article['title'])
             
+            # 步骤3: 处理日期信息
             if article['publish_date']:
+                # 如果文章包含发布日期，解析年月日
                 date_prefix = article['publish_date']
-                # 从发布日期中提取年月日
-                year = date_prefix[:4]
-                month = date_prefix[4:6]
-                day = date_prefix[6:8]
+                year = date_prefix[:4]      # 提取年份
+                month = date_prefix[4:6]    # 提取月份
+                day = date_prefix[6:8]      # 提取日期
             else:
-                # 如果没有发布日期,则使用当前日期
+                # 如果没有发布日期，使用当前时间
                 now = datetime.now()
                 date_prefix = now.strftime('%Y%m%d')
                 year = now.strftime('%Y')
                 month = now.strftime('%m')
                 day = now.strftime('%d')
             
-            # 创建层级目录结构：作者/年/月/日
+            # 步骤4: 创建目录结构
+            # 按照"基础路径/作者/年/月/日"的层级结构创建目录
             article_dir = os.path.join(base_dir, author_name, year, month, day)
             if not os.path.exists(article_dir):
                 os.makedirs(article_dir)
             logger.info(f"创建路径: {article_dir}")
             
-            # 创建 images 目录在日期目录下
+            # 在文章目录下创建images子目录用于存储图片
             images_dir = os.path.join(article_dir, 'images')
             if not os.path.exists(images_dir):
                 os.makedirs(images_dir)
             
-            # 下载图片时使用正确的路径
+            # 步骤5: 处理文章中的图片
+            # 创建字典存储原始图片URL和本地保存路径的映射
             image_map = {}
             logger.info(f"开始下载图片")
             for i, img_url in enumerate(article['image_urls']):
                 try:
+                    # 下载每张图片
                     response = requests.get(img_url, stream=True)
                     if response.status_code == 200:
-                        # 使用时间戳命名图片
+                        # 使用时间戳生成唯一的图片文件名
                         timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
                         img_filename = f"image_{timestamp}.jpg"
                         img_path = os.path.join(images_dir, img_filename)
+                        # 保存图片到本地
                         with open(img_path, 'wb') as f:
                             f.write(response.content)
-                        # 在 Markdown 中使用相对路径
+                        # 记录图片的相对路径，用于Markdown文件中的引用
                         image_map[img_url] = f"./images/{img_filename}"
                 except Exception as e:
                     print(f"下载图片失败 {img_url}: {str(e)}")
             
+            # 步骤6: 处理HTML内容
             content_html = article['content_html']
             soup = BeautifulSoup(content_html, 'html.parser')
             
+            # 替换HTML中的图片标签为Markdown格式
             for img in soup.find_all('img'):
                 src = img.get('data-src') or img.get('src')
                 if src in image_map:
                     new_path = image_map[src]
+                    # 创建Markdown格式的图片引用
                     markdown_img = f'\n\n![image]({new_path})\n\n'
                     img.replace_with(BeautifulSoup(markdown_img, 'html.parser'))
             
             content_html = str(soup)
             
+            # 步骤7: 配置HTML到Markdown的转换器
             h = html2text.HTML2Text()
-            h.ignore_links = False
-            h.ignore_images = False
-            h.ignore_emphasis = False
-            h.body_width = 0
-            h.unicode_snob = True
+            h.ignore_links = False          # 保留链接
+            h.ignore_images = False         # 保留图片
+            h.ignore_emphasis = True       # 保留强调格式（如粗体、斜体）
+            h.body_width = 0               # 不限制行宽
+            h.unicode_snob = True          # 使用Unicode字符
             
+            # 将HTML转换为Markdown格式
             content_markdown = h.handle(content_html)
             
+            # 步骤8: 组装最终的Markdown内容
             markdown_content = f"""# {article['title']}
 
-> 原文链接：{article['url']}
+{content_markdown}
 
-{content_markdown}"""
+> 原文链接：{article['url']}"""
             
-            # 更新文件保存路径
+            # 步骤9: 保存Markdown文件
             filepath = os.path.join(article_dir, f"{article_title}.md")
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
