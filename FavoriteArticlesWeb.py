@@ -183,9 +183,74 @@ class WechatArticleCrawler:
                 month = now.strftime('%m')
                 day = now.strftime('%d')
             
-            # 步骤4: 创建目录结构
-            # 按照"基础路径/作者/年/月/日"的层级结构创建目录
-            article_dir = os.path.join(base_dir, author_name, year, month, day)
+            # 获取目录编号的辅助函数
+            def get_next_dir_number(parent_dir):
+                """
+                获取目录的下一个可用编号
+                
+                参数:
+                    parent_dir: 父目录路径
+                    
+                返回:
+                    str: 两位数的字符串编号（如："01", "02"等）
+                """
+                # 步骤1: 检查父目录是否存在
+                if not os.path.exists(parent_dir):
+                    return "01"  # 如果父目录不存在，返回初始编号"01"
+                
+                # 步骤2: 获取所有子目录
+                existing_dirs = [d for d in os.listdir(parent_dir) 
+                                if os.path.isdir(os.path.join(parent_dir, d))]
+                
+                # 步骤3: 如果没有子目录，返回初始编号
+                if not existing_dirs:
+                    return "01"
+                # 输出已经存在的目录日志
+                logger.info(f"已经存在的目录: {existing_dirs}")
+                # 步骤4: 提取所有数字编号并找出最大值
+                # - 通过split('.')分割目录名，获取编号部分
+                # - 只处理以数字开头的目录名
+                # - 将编号转换为整数进行比较
+                max_num = max([int(d.split('.')[0]) for d in existing_dirs 
+                              if d.split('.')[0].isdigit()])
+                
+                # 步骤5: 返回最大编号+1，并补齐为两位数
+                return str(max_num + 1).zfill(2)
+            
+            # 获取或创建作者目录
+            author_dirs = [d for d in os.listdir(base_dir) 
+                          if os.path.isdir(os.path.join(base_dir, d)) 
+                          and d.endswith(f".{author_name}")]
+            if author_dirs:
+                author_dir = author_dirs[0]  # 使用已存在的作者目录
+            else:
+                author_num = get_next_dir_number(base_dir)
+                author_dir = f"{author_num}.{author_name}"
+            
+            # 获取或创建年份目录
+            year_path = os.path.join(base_dir, author_dir)
+            if not os.path.exists(year_path):
+                os.makedirs(year_path)
+            year_dirs = [d for d in os.listdir(year_path) 
+                        if os.path.isdir(os.path.join(year_path, d)) 
+                        and d.endswith(f".{year}")]
+            if year_dirs:
+                year_dir = year_dirs[0]  # 使用已存在的年份目录
+            else:
+                year_num = get_next_dir_number(year_path)
+                year_dir = f"{year_num}.{year}"
+            
+            # 创建月份目录（保持原有格式）
+            month_dir = f"{month.zfill(2)}.{int(month)}月"
+            
+            # 创建完整的目录路径
+            article_dir = os.path.join(
+                base_dir,
+                author_dir,
+                year_dir,
+                month_dir
+            )
+            
             if not os.path.exists(article_dir):
                 os.makedirs(article_dir)
             logger.info(f"创建路径: {article_dir}")
@@ -194,8 +259,34 @@ class WechatArticleCrawler:
             images_dir = os.path.join(article_dir, 'images')
             if not os.path.exists(images_dir):
                 os.makedirs(images_dir)
+
+            # 生成文件名（日期+序号）
+            # 获取当前目录下所有markdown文件
+            existing_files = [f for f in os.listdir(article_dir) if f.endswith('.md')]
             
-            # 步骤5: 处理文章中的图片
+            # 获取当天的日期（两位数）
+            current_day = day.zfill(2)
+            
+            # 筛选出当天的文件（文件名前两位匹配当天日期）
+            day_files = [f for f in existing_files if f.startswith(current_day)]
+            
+            if day_files:
+                # 获取当天最大序号
+                # 从文件名中提取序号部分（第3-4位）并找出最大值
+                max_seq = max([int(f.split('.')[0][2:4]) for f in day_files])
+                seq = str(max_seq + 1).zfill(2)
+            else:
+                seq = "01"  # 当天第一个文件
+            
+            # 文件名格式：DDSS.标题.md
+            # DD: 日期（两位）
+            # SS: 序号（两位）
+            # 例如：1102.文章名.md 表示11日第2篇文章
+            filename = f"{current_day}{seq}.{article_title}.md"
+            
+            logger.info(f"生成文件名: {filename}")  # 添加日志记录
+            
+            # 步骤4: 处理文章中的图片
             # 创建字典存储原始图片URL和本地保存路径的映射
             image_map = {}
             logger.info(f"开始下载图片")
@@ -243,14 +334,19 @@ class WechatArticleCrawler:
             content_markdown = h.handle(content_html)
             
             # 步骤8: 组装最终的Markdown内容
-            markdown_content = f"""# {article['title']}
-
+            markdown_content = f"""---
+title: {article_title}
+date: {article['publish_date']}
+author: 
+    name: {author_name}
+---
+# {article['title']}
 {content_markdown}
 
 > 原文链接：{article['url']}"""
             
             # 步骤9: 保存Markdown文件
-            filepath = os.path.join(article_dir, f"{article_title}.md")
+            filepath = os.path.join(article_dir, f"{filename}")
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
                 
