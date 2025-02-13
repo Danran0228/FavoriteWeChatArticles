@@ -170,6 +170,7 @@ class WechatArticleCrawler:
             
             # 步骤3: 处理日期信息
             if article['publish_date']:
+                logger.info(f"文章包含发布日期: {article['publish_date']}")
                 # 如果文章包含发布日期，解析年月日
                 date_prefix = article['publish_date']
                 year = date_prefix[:4]      # 提取年份
@@ -329,6 +330,10 @@ class WechatArticleCrawler:
             h.ignore_emphasis = True       # 保留强调格式（如粗体、斜体）
             h.body_width = 0               # 不限制行宽
             h.unicode_snob = True          # 使用Unicode字符
+
+            # 将发布时间'20250212'转换为 `2025/02/13 16:20:21` 格式
+            publish_date = datetime.strptime(article['publish_date'], '%Y%m%d')
+            publish_date = publish_date.strftime('%Y/%m/%d %H:%M:%S')
             
             # 将HTML转换为Markdown格式
             content_markdown = h.handle(content_html)
@@ -336,9 +341,12 @@ class WechatArticleCrawler:
             # 步骤8: 组装最终的Markdown内容
             markdown_content = f"""---
 title: {article_title}
-date: {article['publish_date']}
+createTime: {publish_date}
 author: 
     name: {author_name}
+tags:
+  - 猫笔刀
+  - 财经
 ---
 # {article['title']}
 {content_markdown}
