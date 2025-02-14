@@ -16,6 +16,8 @@ import configparser
 from logger_config import setup_logger
 from multiprocessing import Pool
 from functools import partial
+from subprocess import Popen
+import subprocess
 
 # 设置日志
 logger = setup_logger()
@@ -43,6 +45,9 @@ class Config:
 
     def get_save_path(self):
         return self.config.get('Path', 'save_path', fallback='articles')
+    
+    def get_shell_path(self):
+        return self.config.get('Path', 'SHELL_PATH', fallback=None)
 
 class WebDriverSingleton:
     _instance = None
@@ -145,6 +150,30 @@ class WechatArticleCrawler:
         except Exception as e:
             print(f"抓取文章失败: {str(e)}")
             return None
+
+    def async_shell(self):
+        """
+        异步执行shell操作
+        该方法会在后台执行配置的shell，不会阻塞主线程
+        """
+        try:
+            script_path = self.config.get_shell_path()
+            if not script_path:
+                logger.warning("未配置shell脚本路径，不执行shell相关脚本")
+                return
+            if os.path.exists(script_path):
+                logger.info(f"开始执行shell脚本: {script_path}")
+                # 使用Popen异步执行脚本，不等待结果
+                process = Popen(['bash', script_path], 
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            start_new_session=True)
+                logger.info("shell脚本已启动")
+            else:
+                logger.warning(f"shell脚本不存在: {script_path}")
+        except Exception as e:
+            logger.error(f"执行shell脚本时出错: {str(e)}")
+            # 继续执行，不影响主流程
 
     def save_article(self, article, custom_path=None):
         try:
@@ -364,6 +393,7 @@ tags:
             print(f"保存文章失败: {str(e)}")
             return None
 
+
 @app.after_request
 def set_response_headers(response):
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
@@ -402,8 +432,14 @@ def save_article():
         if not filepath:
             logger.error("文章保存失败")
             return jsonify({'error': '文章保存失败'}), 500
-            
-        logger.info(f"文章保存成功: {filepath}")
+
+        logger.info(f"文章保存成功: {filepath}")            
+        # 调用异步shell脚本执行方法
+        try:
+            crawler.async_shell()
+        except Exception as e:
+            logger.exception(f"执行shell脚本发生异常: {str(e)}")
+
         return jsonify({
             'message': '文章保存成功',
             'filepath': filepath,
